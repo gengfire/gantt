@@ -1038,6 +1038,8 @@ const VIEW_MODE = {
     MONTH: 'Month',
     YEAR: 'Year'
 };
+// 按每组个数切分数组
+const arrayChunk = (arr, size) => Array.from({ length: Math.ceil(arr.length / size) }, (v, i) => arr.slice(i * size, i * size + size));
 
 class Gantt {
     constructor(wrapper, tasks, options) {
@@ -1110,7 +1112,7 @@ class Gantt {
             date_format: 'YYYY-MM-DD',
             popup_trigger: 'click',
             custom_popup_html: null,
-            language: 'en'
+            language: 'zh'
         };
         this.options = Object.assign({}, default_options, options);
     }
@@ -1293,14 +1295,52 @@ class Gantt {
         this.bind_bar_events();
     }
 
+    asyncChunkRender(callback) {
+        // 300条为一组
+        const chunkList = arrayChunk(this.tasks, 300);
+        const chunkLen = chunkList.length;
+
+        let index = 0;
+        this.$container.onscroll = (e) => {
+            const { scrollTop } = this.$container;
+            const grid_height = this.grid_height || 0;
+            const offsetTop = grid_height - (index + 1) * 1000; // 触发阈值
+
+            if (
+                scrollTop > 0 && grid_height > 1000 &&
+                (scrollTop > offsetTop) &&
+                (index < chunkLen - 1)
+            ) {
+                index++;
+                // console.log('异步加载', index);
+                callback && callback(chunkList[index]);
+            }
+        };
+        callback && callback(chunkList[index]);
+    }
+
     render() {
         this.clear();
         this.setup_layers();
-        this.make_grid();
+
+        // make_grid start;
+        this.make_grid_header();
+        this.make_grid_ticks();
+        this.make_grid_highlights();
+        // make_grid end;
+
         this.make_dates();
-        this.make_bars();
-        this.make_arrows();
+        
+        // 分批处理
+        this.asyncChunkRender(tasks => {
+            this.make_grid_background(tasks);
+            this.make_grid_rows(tasks);
+            this.make_bars(tasks);
+            this.make_arrows(tasks);
+        });
+        
         this.map_arrows_on_bars();
+        // 宽度只设置一次
         this.set_width();
         this.set_scroll_position();
     }
@@ -1317,6 +1357,7 @@ class Gantt {
         }
     }
 
+    // 绘制grid
     make_grid() {
         this.make_grid_background();
         this.make_grid_rows();
@@ -1325,59 +1366,85 @@ class Gantt {
         this.make_grid_highlights();
     }
 
-    make_grid_background() {
+    make_grid_background(tasks) {
         const grid_width = this.dates.length * this.options.column_width;
-        const grid_height =
+        // 当前任务列表的高度
+        const task_height =
             this.options.header_height +
             this.options.padding +
-            (this.options.bar_height + this.options.padding) *
-                this.tasks.length;
+            (this.options.bar_height + this.options.padding) * tasks.length;
+        const grid_height = (this.grid_height || 0) + task_height;
 
-        createSVG('rect', {
-            x: 0,
-            y: 0,
-            width: grid_width,
-            height: grid_height,
-            class: 'grid-background',
-            append_to: this.layers.grid
-        });
+        // 暂存高度
+        this.grid_height = grid_height;
+
+        // 背景占位 没有就创建 有则更改高度
+        if (!this.$backgroundRect) {
+            this.$backgroundRect = createSVG('rect', {
+                x: 0,
+                y: 0,
+                width: grid_width,
+                height: grid_height,
+                class: 'grid-background',
+                append_to: this.layers.grid
+            });
+        } else {
+            $.attr(this.$backgroundRect, {
+                height: grid_height,
+            });
+        }
 
         $.attr(this.$svg, {
-            height: grid_height + this.options.padding + 100,
-            width: '100%'
+            height: grid_height + this.options.padding + 40
         });
     }
-
-    make_grid_rows() {
-        const rows_layer = createSVG('g', { append_to: this.layers.grid });
-        const lines_layer = createSVG('g', { append_to: this.layers.grid });
+    
+    // 绘制svg 任务行【关键1】
+    make_grid_rows(tasks) {
+        // 注意不要重复创建分组 偏移y、y1、y2需要累加
+        if (!this.rows_layer) {
+            this.rows_layer = createSVG('g', { class: 'rows-layer', append_to: this.layers.grid });
+        }
+        if (!this.lines_layer) {
+            this.lines_layer = createSVG('g', { class: 'lines-layer', append_to: this.layers.grid });
+        }
 
         const row_width = this.dates.length * this.options.column_width;
         const row_height = this.options.bar_height + this.options.padding;
 
+        // 初始偏移量 有历史则使用历史偏移量 保证能累加
         let row_y = this.options.header_height + this.options.padding / 2;
+        if (this.rowOffsetY) {
+            row_y = this.rowOffsetY;
+        }
 
-        for (let task of this.tasks) {
+        for (let task of tasks) {
+            // 横条y偏移
+            const gridRowY = row_y;
             createSVG('rect', {
                 x: 0,
-                y: row_y,
+                y: gridRowY, //
                 width: row_width,
                 height: row_height,
                 class: 'grid-row',
-                append_to: rows_layer
+                append_to: this.rows_layer
             });
 
+            // 分割线y1,y2偏移
+            const rowLineY = row_y + row_height;
             createSVG('line', {
                 x1: 0,
-                y1: row_y + row_height,
+                y1: rowLineY,
                 x2: row_width,
-                y2: row_y + row_height,
+                y2: rowLineY,
                 class: 'row-line',
-                append_to: lines_layer
+                append_to: this.lines_layer
             });
 
             row_y += this.options.bar_height + this.options.padding;
         }
+        // 循环结束 记录历史偏移量
+        this.rowOffsetY = row_y;
     }
 
     make_grid_header() {
@@ -1586,19 +1653,20 @@ class Gantt {
         };
     }
 
-    make_bars() {
-        this.bars = this.tasks.map(task => {
+    // 绘制柱状图 【关键3】
+    make_bars(tasks) {
+        const bars = tasks.map(task => {
             const bar = new Bar(this, task);
             this.layers.bar.appendChild(bar.group);
             return bar;
         });
+        this.bars = [...(this.bars || []), ...bars];
     }
-
-    make_arrows() {
-        this.arrows = [];
-        for (let task of this.tasks) {
-            let arrows = [];
-            arrows = task.dependencies
+    // 绘制箭头 【关键2】
+    make_arrows(tasks) {
+        const arrows = [];
+        for (let task of tasks) {
+            task.dependencies
                 .map(task_id => {
                     const dependency = this.get_task(task_id);
                     if (!dependency) return;
@@ -1608,11 +1676,12 @@ class Gantt {
                         this.bars[task._index] // to_task
                     );
                     this.layers.arrow.appendChild(arrow.element);
+                    arrows.push(arrow);
                     return arrow;
                 })
                 .filter(Boolean); // filter falsy values
-            this.arrows = this.arrows.concat(arrows);
         }
+        this.arrows = [...(this.arrows || []), ...arrows];
     }
 
     map_arrows_on_bars() {
