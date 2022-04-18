@@ -17,14 +17,14 @@
 
 ### Install
 ```
-npm install frappe-gantt
+npm install frappe-gantt-bigdata
 ```
 
 ### Usage
 Include it in your HTML:
 ```
-<script src="frappe-gantt.min.js"></script>
-<link rel="stylesheet" href="frappe-gantt.css">
+<script src="frappe-gantt-bigdata.min.js"></script>
+<link rel="stylesheet" href="frappe-gantt-bigdata.css">
 ```
 
 And start hacking:
