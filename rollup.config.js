@@ -11,7 +11,7 @@ const dev = {
     },
     plugins: [
         sass({
-            output: 'dist/frappe-gantt-bigdata.css'
+            output: 'dist/gantt.css'
         })
     ]
 };
