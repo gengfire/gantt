@@ -1,8 +1,8 @@
 {
   "name": "frappe-gantt-bigdata",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "A web gantt library support bigdata by frappe-gantt",
-  "main": "src/index.js",
+  "main": "dist/index.js",
   "scripts": {
     "start": "yarn run dev",
     "build": "rollup -c",
